@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Blackwake editor</title>
+    </head>
+    <body>
+        <input type="file" id="save_input" accept=".save">
+    </body>
+
+    <script>
+        function readU32LE(bytes, offset) {
+            return (
+                bytes[offset] |
+                (bytes[offset + 1] << 8) |
+                (bytes[offset + 2] << 16) |
+                (bytes[offset + 3] << 24)
+            ) >>> 0;
+        }
+
+        function readUtf16LeString(bytes, offset, charCount) {
+            const slice = bytes.slice(offset, offset + charCount * 2);
+            return new TextDecoder("utf-16le").decode(slice);
+        }
+
+        function parseBarotraumaSaveEntries(bytes) {
+            const entries = [];
+            let offset = 0;
+
+            while (offset < bytes.length) {
+                if (offset + 4 > bytes.length) break;
+
+                const nameLength = readU32LE(bytes, offset);
+                offset += 4;
+
+                if (nameLength === 0) break;
+
+                const nameByteLength = nameLength * 2;
+                if (offset + nameByteLength > bytes.length) {
+                    throw new Error(`Broken save: filename exceeds buffer at offset ${offset}`);
+                }
+
+                const name = readUtf16LeString(bytes, offset, nameLength);
+                offset += nameByteLength;
+
+                if (offset + 4 > bytes.length) {
+                    throw new Error(`Broken save: missing content length for "${name}"`);
+                }
+
+                const contentLength = readU32LE(bytes, offset);
+                offset += 4;
+
+                if (offset + contentLength > bytes.length) {
+                    throw new Error(`Broken save: content exceeds buffer for "${name}"`);
+                }
+
+                const content = bytes.slice(offset, offset + contentLength);
+                offset += contentLength;
+
+                entries.push({
+                    name,
+                    contentLength,
+                    content
+                });
+            }
+
+            return entries;
+        }
+
+        async function gunzipNative(uint8) {
+            const ds = new DecompressionStream("gzip");
+            const stream = new Blob([uint8]).stream().pipeThrough(ds);
+
+            const buffer = await new Response(stream).arrayBuffer();
+
+            return new Uint8Array(buffer);
+        }
+
+        document.querySelector("#save_input").addEventListener("change", async (event) => {
+
+            const file = event.target.files[0];
+            const compressed = new Uint8Array(await file.arrayBuffer());
+
+            const decompressed = await gunzipNative(compressed);
+            const entries = parseBarotraumaSaveEntries(decompressed);
+
+            console.log(entries.map(e => ({
+                name: e.name,
+                size: e.contentLength
+            })));
+        });
+    </script>
+</html>
