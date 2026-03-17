@@ -97,7 +97,7 @@ function ParseSaveContainer(bytes) {
 
         const name = reader.readUTF16LEString(nameLength);
         const contentLength = reader.readU32LE();
-        const content = reader.readUTF16LEString(contentLength);
+        const content = reader.readBytes(contentLength);
 
         entries.push({
             name,
@@ -114,9 +114,17 @@ GetAppDataSavesPath().then(data => {
         console.log(saves)
         const save = `${data}\\${saves.find(item => item === "Test.save")}`;
 
-        ReadSaveFile(save).then(binary => {
-            const content = GunzipNative(binary);
-            console.log(ParseSaveContainer(content));
+        ReadSaveFile(save).then(async binary => {
+            const content = await GunzipNative(binary);
+            const entries = ParseSaveContainer(content);
+
+            console.log(entries);
+
+            const xmlEntry = entries.find(e => e.name === "gamesession.xml");
+            if (xmlEntry) {
+                const xmlText = new TextDecoder("utf-8").decode(xmlEntry.content);
+                console.log(xmlText);
+            }
         });
     });
 });
