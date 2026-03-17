@@ -75,13 +75,48 @@ function ReadSaveFile(filePath) {
     });
 }
 
+async function GunzipNative(uint8) {
+    const ds = new DecompressionStream("gzip");
+    const stream = new Blob([uint8]).stream().pipeThrough(ds);
+
+    const buffer = await new Response(stream).arrayBuffer();
+
+    return new Uint8Array(buffer);
+}
+
+function ParseSaveContainer(bytes) {
+    const reader = new BinaryReader(bytes);
+    const entries = [];
+
+    while (!reader.eof()) {
+        if (reader.offset + 4 > reader.bytes.length) break;
+
+        const nameLength = reader.readU32LE();
+
+        if (nameLength === 0) break;
+
+        const name = reader.readUTF16LEString(nameLength);
+        const contentLength = reader.readU32LE();
+        const content = reader.readUTF16LEString(contentLength);
+
+        entries.push({
+            name,
+            contentLength,
+            content
+        });
+    }
+
+    return entries;
+}
+
 GetAppDataSavesPath().then(data => {
     ListSaveFiles(data).then(saves => {
         console.log(saves)
         const save = `${data}\\${saves.find(item => item === "Test.save")}`;
 
         ReadSaveFile(save).then(binary => {
-            console.log(binary);
+            const content = GunzipNative(binary);
+            console.log(ParseSaveContainer(content));
         });
     });
 });
